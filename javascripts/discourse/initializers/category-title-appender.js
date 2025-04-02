@@ -8,7 +8,12 @@ export default {
       const appendageMap = new Map();
       
       // In theme components, settings are automatically injected globally
-      (settings.category_title_appendages || []).forEach(item => {
+      // Convert the string setting to an array if it exists
+      const appendagesList = settings.category_title_appendages ? 
+                             settings.category_title_appendages.split("|") : 
+                             [];
+      
+      appendagesList.forEach(item => {
         const [categoryId, textToAppend] = item.split(",").map(part => part.trim());
         
         if (categoryId && textToAppend) {
