@@ -1,1 +1,1 @@
-# discourse-add-category-breadcrumbs
+# discourse-tmp-category-subtitle-appender
