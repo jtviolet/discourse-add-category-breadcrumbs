@@ -27,26 +27,37 @@ export default apiInitializer("1.8.0", (api) => {
     }
 
     // Check if we're on a direct parent category view
-    // We only want to disable our customization when viewing the parent category itself
-    const controller = api.container.lookup("controller:application");
-    const discoveryController = api.container.lookup("controller:discovery/categories");
-    
-    // Only check for parent category view if we're on a discovery categories route
-    if (controller.currentRouteName === "discovery.categories") {
-      // We're on the categories listing page
-      // This is fine, we can apply our customization here
-    } else if (controller.currentRouteName.startsWith("discovery.category")) {
-      // We're on some kind of category page
-      // Get the current category being viewed
-      const currentCategory = api.container.lookup("controller:discovery/topics").category;
-      
-      // If the current category matches our parent category, return default HTML
-      if (currentCategory && currentCategory.id === parentCat.id) {
+    // We need to be careful about accessing controllers that might not exist
+    try {
+      const controller = api.container.lookup("controller:application");
+      if (!controller || !controller.currentRouteName) {
         return defaultHtml;
       }
+      
+      const currentRouteName = controller.currentRouteName;
+      
+      // Check if we're on a category page
+      if (currentRouteName.startsWith("discovery.category")) {
+        // Safely get the discovery topics controller
+        const topicsController = api.container.lookup("controller:discovery/topics");
+        
+        // Only proceed if we can safely get the category
+        if (topicsController && topicsController.category) {
+          const currentCategory = topicsController.category;
+          
+          // If we're viewing the parent category directly, use default HTML
+          if (currentCategory.id === parentCat.id) {
+            return defaultHtml;
+          }
+        }
+      }
+    } catch (e) {
+      // If any errors occur during route checking, fall back to default HTML
+      console.warn("Error in category breadcrumb component:", e);
+      return defaultHtml;
     }
     
-    // Proceed with customization for all other pages (tag pages, search results, etc.)
+    // Proceed with customization for all other pages
     let descriptionText = escapeExpression(get(parentCat, "description_text"));
     let restricted = get(parentCat, "read_restricted");
     let url = opts.url
