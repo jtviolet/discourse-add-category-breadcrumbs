@@ -2,12 +2,22 @@ import { apiInitializer } from "discourse/lib/api";
 import Category from "discourse/models/category";
 
 export default apiInitializer("0.11.1", (api) => {
+  // Debug log function with prefixed messages
+  const debug = (message, data = null) => {
+    console.log(`[CategoryBreadcrumb] ${message}`, data || '');
+  };
+  
+  // Error log function
+  const logError = (message, error) => {
+    console.error(`[CategoryBreadcrumb] ${message}`, error);
+  };
+
   // Function to safely get categories
   const getCategories = () => {
     try {
       return api.container.lookup("site:main").categories || [];
     } catch (e) {
-      console.warn("Error getting categories:", e);
+      logError("Error getting categories:", e);
       return [];
     }
   };
@@ -18,6 +28,8 @@ export default apiInitializer("0.11.1", (api) => {
       const allCategories = getCategories();
       if (!allCategories.length) return null;
 
+      debug(`Building breadcrumb for category ID: ${categoryId}`);
+      
       // Build category chain
       const chain = [];
       let currentId = categoryId;
@@ -25,7 +37,10 @@ export default apiInitializer("0.11.1", (api) => {
       // Build the chain from leaf to root
       while (currentId) {
         const category = allCategories.find(c => c.id === parseInt(currentId, 10));
-        if (!category) break;
+        if (!category) {
+          debug(`Category not found for ID: ${currentId}`);
+          break;
+        }
         
         chain.unshift({
           id: category.id,
@@ -35,12 +50,15 @@ export default apiInitializer("0.11.1", (api) => {
           parentId: category.parent_category_id
         });
         
+        debug(`Added to chain: ${category.name} (ID: ${category.id}, Parent: ${category.parent_category_id || 'none'})`);
+        
         currentId = category.parent_category_id;
       }
 
+      debug(`Complete category chain:`, chain);
       return chain;
     } catch (e) {
-      console.warn("Error building category breadcrumb:", e);
+      logError("Error building category breadcrumb:", e);
       return null;
     }
   };
@@ -49,54 +67,155 @@ export default apiInitializer("0.11.1", (api) => {
   const updateTopicListItems = () => {
     try {
       // Get current route
-      const currentRoute = api.container.lookup("controller:application")?.currentRouteName || "";
+      const controller = api.container.lookup("controller:application");
+      const currentRoute = controller?.currentRouteName || "";
+      
+      debug(`Current route: ${currentRoute}`);
       
       // Skip on these routes
       const skipRoutes = [
         "discovery.categories",  // Homepage with categories
-        "discovery.category"     // Category pages
       ];
       
-      if (skipRoutes.some(route => currentRoute.includes(route))) {
+      if (skipRoutes.some(route => currentRoute === route)) {
+        debug(`Skipping breadcrumbs on excluded route: ${currentRoute}`);
         return;
       }
-      
-      // Try multiple selector combinations to find category badges
-      const selectors = [
-        // Topic list selectors
-        ".topic-list .topic-list-item td.category .badge-wrapper",
-        ".topic-list-item .badge-wrapper",
-        // Search result selectors
-        ".search-results .search-result-topic .badge-wrapper",
-        // Latest topics list selectors
-        ".latest-topic-list-item .badge-wrapper"
-      ];
-      
-      // Find and process all badge wrappers
-      let processedAny = false;
-      
-      selectors.forEach(selector => {
-        const elements = document.querySelectorAll(selector);
-        elements.forEach(wrapper => {
-          // Skip if already processed
-          if (wrapper.dataset.breadcrumbAdded === "true") return;
+
+      // If on a category page, check if it's a parent category
+      if (currentRoute.startsWith("discovery.category")) {
+        const topicsController = api.container.lookup("controller:discovery/topics");
+        if (topicsController && topicsController.category) {
+          const currentCategory = topicsController.category;
+          debug(`On category page: ${currentCategory.name} (ID: ${currentCategory.id})`);
           
-          // Find category ID - it might be on a child element
-          const categoryBadge = wrapper.querySelector("[data-category-id]");
-          if (!categoryBadge) return;
+          // Skip if we're on a top-level category with no parent
+          if (!currentCategory.parent_category_id) {
+            debug("Skipping breadcrumbs on top-level category page");
+            return;
+          }
+        }
+      }
+      
+      // Find all topic list elements
+      const topicListItems = document.querySelectorAll(".topic-list-item");
+      debug(`Found ${topicListItems.length} topic list items`);
+
+      // Process each topic list item
+      topicListItems.forEach((item, index) => {
+        try {
+          // Find the category wrapper and badge
+          const categoryCell = item.querySelector("td.category");
+          if (!categoryCell) {
+            debug(`No category cell found in topic #${index + 1}`);
+            return;
+          }
           
-          const categoryId = categoryBadge.dataset.categoryId;
-          if (!categoryId) return;
+          // Check if already processed
+          if (categoryCell.dataset.breadcrumbProcessed === "true") {
+            debug(`Topic #${index + 1} already processed`);
+            return;
+          }
           
-          // Get the element containing the category name
-          const nameElem = wrapper.querySelector(".badge-category__name");
-          if (!nameElem) return;
+          const badgeWrapper = categoryCell.querySelector(".badge-wrapper");
+          if (!badgeWrapper) {
+            debug(`No badge wrapper found in topic #${index + 1}`);
+            return;
+          }
+          
+          // Find the element with category id
+          const categoryElement = badgeWrapper.querySelector("[data-category-id]");
+          if (!categoryElement) {
+            debug(`No element with category ID found in topic #${index + 1}`);
+            return;
+          }
+          
+          const categoryId = categoryElement.dataset.categoryId;
+          if (!categoryId) {
+            debug(`No category ID in data attribute for topic #${index + 1}`);
+            return;
+          }
+          
+          debug(`Topic #${index + 1} has category ID: ${categoryId}`);
+          
+          // Find the element containing the category name
+          const nameElem = badgeWrapper.querySelector(".badge-category__name");
+          if (!nameElem) {
+            debug(`No category name element found in topic #${index + 1}`);
+            return;
+          }
+          
+          // Get original category name
+          const originalName = nameElem.textContent.trim();
+          debug(`Topic #${index + 1} original category name: "${originalName}"`);
           
           // Get category chain
           const chain = buildCategoryBreadcrumb(parseInt(categoryId, 10));
-          if (!chain || chain.length <= 1) return;
+          if (!chain || chain.length <= 1) {
+            debug(`No parent categories found for topic #${index + 1}`);
+            return;
+          }
           
           // Build breadcrumb text (exclude the last category since it's already shown)
+          const parentCategories = chain.slice(0, -1);
+          if (!parentCategories.length) {
+            debug(`No parent categories in chain for topic #${index + 1}`);
+            return;
+          }
+          
+          debug(`Parent categories for topic #${index + 1}:`, parentCategories);
+          
+          // Apply max depth if specified
+          const maxDepth = settings.max_depth || 0;
+          const categoriesToShow = maxDepth > 0 
+            ? parentCategories.slice(-maxDepth) 
+            : parentCategories;
+          
+          const separator = settings.breadcrumb_separator || " › ";
+          const breadcrumbPrefix = categoriesToShow.map(cat => cat.name).join(separator);
+          
+          // Update with breadcrumb
+          const fullBreadcrumb = `${breadcrumbPrefix}${separator}${originalName}`;
+          nameElem.textContent = fullBreadcrumb;
+          debug(`Updated topic #${index + 1} with breadcrumb: "${fullBreadcrumb}"`);
+          
+          // Mark as processed
+          categoryCell.dataset.breadcrumbProcessed = "true";
+          
+        } catch (itemError) {
+          logError(`Error processing topic #${index + 1}:`, itemError);
+        }
+      });
+
+      // Process search results too
+      const searchResults = document.querySelectorAll(".search-result-topic");
+      debug(`Found ${searchResults.length} search results`);
+      
+      searchResults.forEach((result, index) => {
+        try {
+          // Skip if already processed
+          if (result.dataset.breadcrumbProcessed === "true") return;
+          
+          const badgeWrapper = result.querySelector(".badge-wrapper");
+          if (!badgeWrapper) return;
+          
+          const categoryElement = badgeWrapper.querySelector("[data-category-id]");
+          if (!categoryElement) return;
+          
+          const categoryId = categoryElement.dataset.categoryId;
+          if (!categoryId) return;
+          
+          // Find name element
+          const nameElem = badgeWrapper.querySelector(".badge-category__name");
+          if (!nameElem) return;
+          
+          // Get original name
+          const originalName = nameElem.textContent.trim();
+          
+          // Build breadcrumb
+          const chain = buildCategoryBreadcrumb(parseInt(categoryId, 10));
+          if (!chain || chain.length <= 1) return;
+          
           const parentCategories = chain.slice(0, -1);
           if (!parentCategories.length) return;
           
@@ -109,41 +228,20 @@ export default apiInitializer("0.11.1", (api) => {
           const separator = settings.breadcrumb_separator || " › ";
           const breadcrumbPrefix = categoriesToShow.map(cat => cat.name).join(separator);
           
-          // Store original text
-          const originalName = nameElem.textContent.trim();
-          const fullBreadcrumb = `${breadcrumbPrefix}${separator}${originalName}`;
-          
-          // Update with breadcrumb - try different approaches based on badge type
-          if (wrapper.classList.contains("bullet")) {
-            // For bullet style badges
-            nameElem.textContent = fullBreadcrumb;
-          } else if (wrapper.classList.contains("bar")) {
-            // For bar style badges
-            nameElem.textContent = fullBreadcrumb;
-          } else if (wrapper.classList.contains("box")) {
-            // For box style badges
-            nameElem.textContent = fullBreadcrumb;
-          } else {
-            // Fall back to modifying the name element directly
-            nameElem.textContent = fullBreadcrumb;
-          }
-          
-          // Update tooltip if applicable
-          if (wrapper.title) {
-            wrapper.title = fullBreadcrumb;
-          }
+          // Update text
+          nameElem.textContent = `${breadcrumbPrefix}${separator}${originalName}`;
           
           // Mark as processed
-          wrapper.dataset.breadcrumbAdded = "true";
-          processedAny = true;
-        });
+          result.dataset.breadcrumbProcessed = "true";
+          
+          debug(`Updated search result #${index + 1} with breadcrumb`);
+        } catch (searchError) {
+          logError(`Error processing search result #${index + 1}:`, searchError);
+        }
       });
       
-      if (processedAny) {
-        console.log("Category breadcrumbs added to topic list");
-      }
     } catch (e) {
-      console.warn("Error updating topic list items:", e);
+      logError("Error updating topic list items:", e);
     }
   };
 
@@ -159,13 +257,26 @@ export default apiInitializer("0.11.1", (api) => {
       
       for (const mutation of mutations) {
         if (mutation.addedNodes && mutation.addedNodes.length) {
-          shouldUpdate = true;
-          break;
+          // Check if any relevant nodes were added
+          for (let i = 0; i < mutation.addedNodes.length; i++) {
+            const node = mutation.addedNodes[i];
+            if (node.nodeType === 1 && (
+                node.classList?.contains('topic-list-item') || 
+                node.classList?.contains('search-result-topic') ||
+                node.querySelector?.('.topic-list-item, .search-result-topic')
+            )) {
+              shouldUpdate = true;
+              break;
+            }
+          }
         }
+        
+        if (shouldUpdate) break;
       }
       
       if (shouldUpdate) {
-        updateTopicListItems();
+        debug("New content detected, updating breadcrumbs");
+        setTimeout(updateTopicListItems, 50);
       }
     });
     
@@ -175,56 +286,39 @@ export default apiInitializer("0.11.1", (api) => {
       subtree: true
     });
     
+    debug("Mutation observer set up");
+    
     // Store observer reference
     window.breadcrumbObserver = observer;
+    
+    // Force refresh for initial load
+    setTimeout(updateTopicListItems, 100);
   };
 
   // Initialize on page change with multiple retries for loading content
   api.onPageChange(() => {
-    // Try multiple times to catch late-loading content
+    debug("Page changed, updating breadcrumbs");
+    
+    // Multiple attempts to catch content at different load stages
     setTimeout(updateTopicListItems, 100);
     setTimeout(updateTopicListItems, 500);
     setTimeout(updateTopicListItems, 1000);
+    
+    setupMutationObserver();
   });
 
-  // Set up observer
-  api.onAppEvent("page:changed", () => {
-    setupMutationObserver();
-    setTimeout(updateTopicListItems, 100);
+  // Add debug button
+  api.onPageChange(() => {
+    if (!document.getElementById('debug-breadcrumbs')) {
+      const button = document.createElement('button');
+      button.id = 'debug-breadcrumbs';
+      button.textContent = 'Apply Breadcrumbs';
+      button.style = 'position: fixed; bottom: 10px; right: 10px; z-index: 9999; padding: 5px 10px;';
+      button.onclick = () => {
+        debug("Manual breadcrumb application triggered");
+        updateTopicListItems();
+      };
+      document.body.appendChild(button);
+    }
   });
-  
-  // Add mobile styles if needed
-  if (settings.hide_on_mobile) {
-    api.onPageChange(() => {
-      if (!document.getElementById('breadcrumb-mobile-styles')) {
-        const style = document.createElement('style');
-        style.id = 'breadcrumb-mobile-styles';
-        style.textContent = `
-          @media (max-width: 767px) {
-            [data-breadcrumb-added="true"] .badge-category__name {
-              max-width: 100%;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              white-space: nowrap;
-            }
-          }
-        `;
-        document.head.appendChild(style);
-      }
-    });
-  }
-  
-  // Add debug button in development
-  if (window.location.hostname === "localhost" || window.location.hostname.includes("dev")) {
-    api.onPageChange(() => {
-      if (!document.getElementById('debug-breadcrumbs')) {
-        const button = document.createElement('button');
-        button.id = 'debug-breadcrumbs';
-        button.textContent = 'Apply Breadcrumbs';
-        button.style = 'position: fixed; bottom: 10px; right: 10px; z-index: 9999;';
-        button.onclick = updateTopicListItems;
-        document.body.appendChild(button);
-      }
-    });
-  }
 });
