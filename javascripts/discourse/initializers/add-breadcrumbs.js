@@ -10,107 +10,132 @@ import { iconHTML } from "discourse-common/lib/icon-library";
 
 export default apiInitializer("1.8.0", (api) => {
   api.replaceCategoryLinkRenderer((category, opts) => {
-    // Get the default HTML first
-    const defaultHtml = defaultCategoryLinkRenderer(category, opts);
-
-    // If we should hide parent, return default HTML
-    if (opts.hideParent) {
-      return defaultHtml;
-    }
-
-    // Get parent category
-    const parentCat = Category.findById(get(category, "parent_category_id"));
-
-    // If no parent, return default HTML
-    if (!parentCat) {
-      return defaultHtml;
-    }
-
-    // Check if we're on a direct parent category view
-    // We need to be careful about accessing controllers that might not exist
     try {
-      const controller = api.container.lookup("controller:application");
-      if (!controller || !controller.currentRouteName) {
-        return defaultHtml;
+      // Check for special cases first
+      if (opts.hideParent || !category || !category.parent_category_id) {
+        return defaultCategoryLinkRenderer(category, opts);
       }
-      
-      const currentRouteName = controller.currentRouteName;
-      
-      // Check if we're on a category page
-      if (currentRouteName.startsWith("discovery.category")) {
-        // Safely get the discovery topics controller
-        const topicsController = api.container.lookup("controller:discovery/topics");
-        
-        // Only proceed if we can safely get the category
-        if (topicsController && topicsController.category) {
-          const currentCategory = topicsController.category;
-          
-          // If we're viewing the parent category directly, use default HTML
-          if (currentCategory.id === parentCat.id) {
-            return defaultHtml;
+
+      // Check if we're on a parent category page
+      const controller = api.container.lookup("controller:application");
+      if (controller && controller.currentRouteName) {
+        const currentRouteName = controller.currentRouteName;
+        if (currentRouteName.startsWith("discovery.category")) {
+          const topicsController = api.container.lookup("controller:discovery/topics");
+          if (topicsController && topicsController.category) {
+            // Get the category chain to determine if we're on a parent page
+            let parentId = get(category, "parent_category_id");
+            while (parentId) {
+              if (topicsController.category.id === parentId) {
+                // We're on a parent category page, use default renderer
+                return defaultCategoryLinkRenderer(category, opts);
+              }
+              
+              // Move up the chain
+              const parent = Category.findById(parentId);
+              parentId = parent ? parent.parent_category_id : null;
+            }
           }
         }
       }
-    } catch (e) {
-      // If any errors occur during route checking, fall back to default HTML
-      console.warn("Error in category breadcrumb component:", e);
-      return defaultHtml;
+
+      // Build full category breadcrumb chain
+      let categoryChain = [];
+      let currentCat = category;
+      
+      // Collect all categories in the chain
+      while (currentCat) {
+        categoryChain.unshift(currentCat);
+        
+        if (!currentCat.parent_category_id) break;
+        
+        currentCat = Category.findById(currentCat.parent_category_id);
+        if (!currentCat) break;
+      }
+      
+      // If only one category in chain, use default renderer
+      if (categoryChain.length <= 1) {
+        return defaultCategoryLinkRenderer(category, opts);
+      }
+      
+      // Start building the HTML for the breadcrumb
+      let html = "";
+      const separator = " › ";
+      
+      // Build breadcrumb for all categories except the last one
+      for (let i = 0; i < categoryChain.length - 1; i++) {
+        const cat = categoryChain[i];
+        
+        // Get information about this category
+        const descriptionText = escapeExpression(get(cat, "description_text"));
+        const restricted = get(cat, "read_restricted");
+        const url = getURL(`/c/${Category.slugFor(cat)}/${get(cat, "id")}`);
+        const color = cat.color;
+        
+        // Create the category badge
+        let catHtml = `<a href="${url}" class="badge-category__wrapper" style="${categoryVariables(cat)}">`;
+        catHtml += `<span 
+          data-category-id="${cat.id}" 
+          data-drop-close="true"
+          class="badge-category ${restricted ? 'restricted' : ''}"
+          ${color ? `style="--category-badge-color: #${color}"` : ""}
+          ${descriptionText ? `title="${descriptionText}"` : ""}
+        >`;
+        
+        // Add lock icon if restricted
+        if (restricted) {
+          catHtml += iconHTML("lock");
+        }
+        
+        // Add the category name
+        const categoryName = escapeExpression(get(cat, "name"));
+        const categoryDir = helperContext().siteSettings.support_mixed_text_direction ? 'dir="auto"' : '';
+        catHtml += `<span class="badge-category__name" ${categoryDir}>${categoryName}</span>`;
+        
+        catHtml += "</span></a>";
+        
+        // Add to main HTML
+        html += catHtml;
+        
+        // Add separator after each category except the last
+        if (i < categoryChain.length - 1) {
+          html += `<span class="breadcrumb-separator">${separator}</span>`;
+        }
+      }
+      
+      // Add the final category (using default renderer)
+      html += defaultCategoryLinkRenderer(category, opts).replace("--has-parent", "");
+      
+      return html;
+      
+    } catch (error) {
+      console.warn("Error in category breadcrumb component:", error);
+      return defaultCategoryLinkRenderer(category, opts);
     }
-    
-    // Proceed with customization for all other pages
-    let descriptionText = escapeExpression(get(parentCat, "description_text"));
-    let restricted = get(parentCat, "read_restricted");
-    let url = opts.url
-      ? opts.url
-      : getURL(`/c/${Category.slugFor(parentCat)}/${get(parentCat, "id")}`);
-    let href = opts.link === false ? "" : url;
-    let tagName = opts.link === false || opts.link === "false" ? "span" : "a";
-    let extraClasses = opts.extraClasses ? " " + opts.extraClasses : "";
-    let style = `${categoryVariables(parentCat)}`;
-    let html = "";
-    let categoryDir = "";
-    let dataAttributes = `data-category-id="${get(parentCat, "id")}"`;
-
-    let siteSettings = helperContext().siteSettings;
-
-    let classNames = `badge-category`;
-    if (restricted) {
-      classNames += " restricted";
+  });
+  
+  // Add styles for the breadcrumb
+  api.onPageChange(() => {
+    if (!document.getElementById('category-breadcrumb-styles')) {
+      const style = document.createElement('style');
+      style.id = 'category-breadcrumb-styles';
+      style.textContent = `
+        .breadcrumb-separator {
+          margin: 0 2px;
+          color: var(--primary-medium);
+        }
+        
+        .topic-list .category {
+          min-width: 150px;
+          width: auto;
+        }
+        
+        /* Remove default parent indicator */
+        .badge-category.--has-parent::before {
+          display: none !important;
+        }
+      `;
+      document.head.appendChild(style);
     }
-
-    html += `<span
-    ${dataAttributes}      
-    data-drop-close="true"
-    class="${classNames}"
-    ${
-      opts.previewColor
-        ? `style="--category-badge-color: #${parentCat.color}"`
-        : ""
-    }
-    ${descriptionText ? 'title="' + descriptionText + '" ' : ""}
-  >`;
-
-    let categoryName = escapeExpression(get(parentCat, "name"));
-
-    if (siteSettings.support_mixed_text_direction) {
-      categoryDir = 'dir="auto"';
-    }
-
-    if (restricted) {
-      html += iconHTML("lock");
-    }
-
-    html += `<span class="badge-category__name" ${categoryDir}>${categoryName}</span>`;
-    html += "</span>";
-
-    if (href) {
-      href = ` href="${href}" `;
-    }
-
-    return (
-      `<${tagName} class="badge-category__wrapper ${extraClasses}" ${
-        style.length > 0 ? `style="${style}"` : ""
-      } ${href}>${html}</${tagName}>` + defaultHtml.replace("--has-parent", "")
-    );
   });
 });
