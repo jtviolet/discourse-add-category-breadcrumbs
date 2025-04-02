@@ -1,3 +1,4 @@
-Create a discourse theme component that lets me specify a list of comma-delimited values in a theme component setting. The format of the comma-delimited values is {category_id},{text_to_append}.
-
-For each value, it will take the title of the category id, on the category homepage, and append the {text_to_append} text on a new line. So in the example where one of the setting list items is 19,Formerly Enterprise Auditor, "Access Analyzer" (first image) would become "Access Analyzer (new line) Formerly Enterprise Auditor" (second image).
+category_title_appendages:
+  type: list
+  default: ""
+  description: "List of category ID and text to append pairs. Format: category_id,text_to_append (e.g., 19,Formerly Enterprise Auditor)"
