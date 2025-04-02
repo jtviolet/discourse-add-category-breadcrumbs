@@ -1,25 +1,20 @@
-// Make the category column wider to accommodate breadcrumbs
-.topic-list .category {
-    width: auto;
-    min-width: 150px;
-    max-width: 280px;
-  }
-  
-  // Ensure category names don't overflow
-  .topic-list-item .badge-category {
-    max-width: 100%;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
-  }
-  
-  // Ensure breadcrumbs don't overflow in other lists
-  .search-menu .results .search-result-category .badge-category,
-  .latest-topic-list-item .badge-category {
-    max-width: 100%;
-  }
-  
-  // Remove default parent category indicator since we're showing the full chain
-  .badge-category.--has-parent::before {
-    display: none !important;
-  }
+// Additional CSS is now applied directly in the JS component for better synchronization
+// This file is kept minimal to avoid conflicts
+
+// Ensure category links in breadcrumbs display inline
+.badge-category__wrapper.breadcrumb-category,
+.badge-category__wrapper {
+  display: inline-flex;
+  align-items: center;
+}
+
+// Ensure breadcrumbs wrap properly if needed
+.topic-list .topic-list-item td.category {
+  white-space: normal;
+  word-break: break-word;
+}
+
+// Ensure consistent spacing in search results
+.search-menu .results .search-result-category .badge-category {
+  margin-right: 0;
+}

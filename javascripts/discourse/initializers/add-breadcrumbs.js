@@ -1,12 +1,8 @@
 import { get } from "@ember/object";
 import { defaultCategoryLinkRenderer } from "discourse/helpers/category-link";
-import categoryVariables from "discourse/helpers/category-variables";
 import { apiInitializer } from "discourse/lib/api";
-import { escapeExpression } from "discourse/lib/utilities";
 import Category from "discourse/models/category";
 import getURL from "discourse-common/lib/get-url";
-import { helperContext } from "discourse-common/lib/helpers";
-import { iconHTML } from "discourse-common/lib/icon-library";
 
 export default apiInitializer("1.8.0", (api) => {
   api.replaceCategoryLinkRenderer((category, opts) => {
@@ -43,15 +39,15 @@ export default apiInitializer("1.8.0", (api) => {
       currentCategory = allCategories.find(c => c.id === parentId);
     }
     
-    // Start with an empty HTML string
-    let html = "";
-    const separator = settings.breadcrumb_separator || " › ";
-    
     // Apply max depth setting if configured
     const maxDepth = settings.max_breadcrumb_depth || 0;
     const startIndex = maxDepth > 0 && categoryChain.length > maxDepth 
                       ? categoryChain.length - maxDepth 
                       : 0;
+    
+    // Start with an empty HTML string
+    let html = "";
+    const separator = settings.breadcrumb_separator || " › ";
                       
     // For each category in the chain (except the last one), render a badge
     for (let i = startIndex; i < categoryChain.length - 1; i++) {
@@ -60,46 +56,28 @@ export default apiInitializer("1.8.0", (api) => {
       // Skip rendering if this is somehow the same as the final category
       if (cat.id === category.id) continue;
       
-      const descriptionText = escapeExpression(get(cat, "description_text"));
-      const restricted = get(cat, "read_restricted");
-      const url = getURL(`/c/${Category.slugFor(cat)}/${get(cat, "id")}`);
-      const tagName = "a";
-      const style = `${categoryVariables(cat)}`;
-      const dataAttributes = `data-category-id="${get(cat, "id")}"`;
+      // Create a temporary copy of the options for this parent category
+      const parentOpts = Object.assign({}, opts);
       
-      let siteSettings = helperContext().siteSettings;
+      // Force a URL to ensure links work correctly
+      parentOpts.url = getURL(`/c/${Category.slugFor(cat)}/${get(cat, "id")}`);
       
-      let classNames = `badge-category breadcrumb-category`;
-      if (restricted) {
-        classNames += " restricted";
+      // Add a special class to identify breadcrumb categories
+      if (!parentOpts.extraClasses) {
+        parentOpts.extraClasses = "breadcrumb-category";
+      } else {
+        parentOpts.extraClasses += " breadcrumb-category";
       }
       
-      html += `<a href="${url}" class="badge-category__wrapper" ${
-        style.length > 0 ? `style="${style}"` : ""
-      }>`;
-      
-      html += `<span
-        ${dataAttributes}      
-        data-drop-close="true"
-        class="${classNames}"
-        ${
-          opts.previewColor
-            ? `style="--category-badge-color: #${cat.color}"`
-            : ""
-        }
-        ${descriptionText ? 'title="' + descriptionText + '" ' : ""}
-      >`;
-      
-      let categoryName = escapeExpression(get(cat, "name"));
-      let categoryDir = siteSettings.support_mixed_text_direction ? 'dir="auto"' : '';
-      
-      if (restricted) {
-        html += iconHTML("lock");
+      // Honor the preserve_category_icons setting
+      if (!settings.preserve_category_icons) {
+        parentOpts.hideIcon = true;
       }
       
-      html += `<span class="badge-category__name" ${categoryDir}>${categoryName}</span>`;
-      html += "</span>";
-      html += "</a>";
+      // Get the default HTML for this parent category (preserving icons, colors, etc.)
+      const catHtml = defaultCategoryLinkRenderer(cat, parentOpts);
+      
+      html += catHtml;
       
       // Add separator if this isn't the last item
       if (i < categoryChain.length - 1) {
@@ -107,7 +85,7 @@ export default apiInitializer("1.8.0", (api) => {
       }
     }
     
-    // Append the default HTML for the final category
+    // Get the default HTML for the final category - preserving all formatting
     const defaultHtml = defaultCategoryLinkRenderer(category, opts);
     html += defaultHtml;
     
@@ -121,17 +99,13 @@ export default apiInitializer("1.8.0", (api) => {
       const styleTag = document.createElement("style");
       styleTag.id = "category-breadcrumb-styles";
       styleTag.innerHTML = `
-        .badge-category__wrapper {
-          margin-right: 3px;
-        }
         .breadcrumb-separator {
           margin: 0 2px;
           color: var(--primary-medium);
           font-size: 0.9em;
         }
         .breadcrumb-category {
-          font-size: 0.9em;
-          opacity: 0.9;
+          opacity: 0.85;
           ${settings.breadcrumb_styles || ""}
         }
         ${settings.hide_on_mobile ? `
@@ -141,6 +115,18 @@ export default apiInitializer("1.8.0", (api) => {
           }
         }
         ` : ''}
+        
+        /* Adjust categories column width */
+        .topic-list .category {
+          width: auto;
+          min-width: 150px;
+          max-width: 280px;
+        }
+        
+        /* Remove default parent category indicator since we're showing the full chain */
+        .badge-category.--has-parent::before {
+          display: none !important;
+        }
       `;
       document.head.appendChild(styleTag);
     }

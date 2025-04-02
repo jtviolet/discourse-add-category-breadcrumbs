@@ -6,7 +6,7 @@ breadcrumb_separator:
 breadcrumb_styles:
   type: string
   default: ""
-  description: "Additional CSS to style the parent categories in the breadcrumb trail. Example: font-style: italic;"
+  description: "Additional CSS to style the parent categories in the breadcrumb trail. Example: font-size: 0.9em;"
 
 hide_on_mobile:
   type: bool
@@ -17,3 +17,8 @@ max_breadcrumb_depth:
   type: integer
   default: 3
   description: "Maximum number of category levels to show in the breadcrumb (0 = no limit)."
+
+preserve_category_icons:
+  type: bool
+  default: true
+  description: "Keep category icons in the breadcrumb trail."
