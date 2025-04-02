@@ -24,54 +24,54 @@ export default {
       // Skip if no valid settings
       if (appendageMap.size === 0) return;
       
-      // Add a decorator for category links
-      api.decorateCategoryLinkTitle((element, categorySlug) => {
-        // Only apply on category page
-        if (!element || !categorySlug || !document.body.classList.contains("categories-list")) {
-          return;
-        }
-        
-        // Get the category ID from data attribute
-        const categoryId = element.closest(".category")?.dataset.categoryId;
-        
-        if (categoryId && appendageMap.has(categoryId)) {
-          // Get the text to append
-          const textToAppend = appendageMap.get(categoryId);
-          
-          // Create and append a new line with the text
-          const appendageElement = document.createElement("div");
-          appendageElement.className = "category-title-appendage";
-          appendageElement.textContent = textToAppend;
-          
-          // Add the appended text
-          element.appendChild(appendageElement);
+      // Use onPageChange to modify category titles
+      api.onPageChange(() => {
+        if (document.body.classList.contains("categories-list")) {
+          // Process both category boxes and category rows
+          updateCategoryElements();
         }
       });
       
-      // Alternative approach for category cards
-      api.onPageChange(() => {
-        if (document.body.classList.contains("categories-list")) {
-          setTimeout(() => {
-            document.querySelectorAll(".category-box").forEach(categoryBox => {
-              const categoryId = categoryBox.dataset.categoryId;
-              
-              if (categoryId && appendageMap.has(categoryId)) {
-                const titleElement = categoryBox.querySelector(".category-box-heading");
-                
-                if (titleElement && !titleElement.querySelector(".category-title-appendage")) {
-                  const textToAppend = appendageMap.get(categoryId);
-                  
-                  const appendageElement = document.createElement("div");
-                  appendageElement.className = "category-title-appendage";
-                  appendageElement.textContent = textToAppend;
-                  
-                  titleElement.appendChild(appendageElement);
-                }
-              }
-            });
-          }, 100);
-        }
-      });
+      function updateCategoryElements() {
+        // Handle category boxes (grid view)
+        document.querySelectorAll(".category-box").forEach(categoryBox => {
+          const categoryId = categoryBox.dataset.categoryId;
+          
+          if (categoryId && appendageMap.has(categoryId)) {
+            const titleElement = categoryBox.querySelector(".category-box-heading");
+            
+            if (titleElement && !titleElement.querySelector(".category-title-appendage")) {
+              const textToAppend = appendageMap.get(categoryId);
+              appendTextToElement(titleElement, textToAppend);
+            }
+          }
+        });
+        
+        // Handle category rows (list view)
+        document.querySelectorAll(".category-list tbody tr.category").forEach(categoryRow => {
+          const categoryId = categoryRow.dataset.categoryId;
+          
+          if (categoryId && appendageMap.has(categoryId)) {
+            const titleElement = categoryRow.querySelector(".category-name");
+            
+            if (titleElement && !titleElement.querySelector(".category-title-appendage")) {
+              const textToAppend = appendageMap.get(categoryId);
+              appendTextToElement(titleElement, textToAppend);
+            }
+          }
+        });
+      }
+      
+      function appendTextToElement(element, text) {
+        const appendageElement = document.createElement("div");
+        appendageElement.className = "category-title-appendage";
+        appendageElement.textContent = text;
+        element.appendChild(appendageElement);
+      }
+      
+      // Also run once on initialization with a slight delay
+      // to ensure the DOM is fully loaded
+      setTimeout(updateCategoryElements, 500);
     });
   }
 };
