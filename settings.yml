@@ -1,2 +1,5 @@
-example_setting:
-  default: true
+settings:
+  category_renames:
+    default: ""
+    type: list
+    description: "Comma-separated pairs of {category_id},{text_to_append} per line"
