@@ -1,5 +1,4 @@
 import { withPluginApi } from "discourse/lib/plugin-api";
-import { getOwner } from "discourse-common/lib/get-owner";
 
 export default {
   name: "category-title-appender",
@@ -8,9 +7,7 @@ export default {
       // Parse settings into a map for quick lookup
       const appendageMap = new Map();
       
-      const themeId = api.container.lookup("service:theme-settings").themeId;
-      const settings = getOwner(this).lookup("service:theme-settings").getObjectForTheme(themeId);
-      
+      // In theme components, settings are automatically injected globally
       (settings.category_title_appendages || []).forEach(item => {
         const [categoryId, textToAppend] = item.split(",").map(part => part.trim());
         
@@ -30,7 +27,7 @@ export default {
         }
         
         // Get the category ID from data attribute
-        const categoryId = element.closest(".category").dataset.categoryId;
+        const categoryId = element.closest(".category")?.dataset.categoryId;
         
         if (categoryId && appendageMap.has(categoryId)) {
           // Get the text to append
