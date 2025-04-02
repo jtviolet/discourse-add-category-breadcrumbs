@@ -1,10 +1,3 @@
-// File: settings.yml
-category_title_appendages:
-  type: list
-  default: ""
-  description: "List of category ID and text to append pairs. Format: category_id,text_to_append (e.g., 19,Formerly Enterprise Auditor)"
-
-// File: javascripts/discourse/initializers/category-title-appender.js
 import { withPluginApi } from "discourse/lib/plugin-api";
 
 export default {
@@ -97,12 +90,3 @@ export default {
     });
   }
 };
-
-// File: common/common.scss
-.category-title-appendage {
-  font-size: 0.8em;
-  font-weight: normal;
-  line-height: 1.4;
-  margin-top: 5px;
-  color: var(--primary-medium);
-}
