@@ -11,32 +11,50 @@ import { iconHTML } from "discourse-common/lib/icon-library";
 export default apiInitializer("1.8.0", (api) => {
   api.replaceCategoryLinkRenderer((category, opts) => {
     try {
-      // Check for special cases first
-      if (opts.hideParent || !category || !category.parent_category_id) {
+      // Get the current route to check if we're on the homepage or a category page
+      const controller = api.container.lookup("controller:application");
+      if (!controller || !controller.currentRouteName) {
         return defaultCategoryLinkRenderer(category, opts);
       }
-
+      
+      const currentRouteName = controller.currentRouteName;
+      
+      // Exclude specific routes where we don't want to modify category display
+      const excludedRoutes = [
+        "discovery.categories", // Homepage with categories
+        "discovery.latest",     // Latest topics page
+        "discovery.top",        // Top topics page
+        "discovery.new",        // New topics page
+        "discovery.unread"      // Unread topics page
+      ];
+      
+      // If we're on an excluded route, use default renderer
+      if (excludedRoutes.includes(currentRouteName)) {
+        return defaultCategoryLinkRenderer(category, opts);
+      }
+      
       // Check if we're on a parent category page
-      const controller = api.container.lookup("controller:application");
-      if (controller && controller.currentRouteName) {
-        const currentRouteName = controller.currentRouteName;
-        if (currentRouteName.startsWith("discovery.category")) {
-          const topicsController = api.container.lookup("controller:discovery/topics");
-          if (topicsController && topicsController.category) {
-            // Get the category chain to determine if we're on a parent page
-            let parentId = get(category, "parent_category_id");
-            while (parentId) {
-              if (topicsController.category.id === parentId) {
-                // We're on a parent category page, use default renderer
-                return defaultCategoryLinkRenderer(category, opts);
-              }
-              
-              // Move up the chain
-              const parent = Category.findById(parentId);
-              parentId = parent ? parent.parent_category_id : null;
+      if (currentRouteName.startsWith("discovery.category")) {
+        const topicsController = api.container.lookup("controller:discovery/topics");
+        if (topicsController && topicsController.category) {
+          // Get the category chain to determine if we're on a parent page
+          let parentId = get(category, "parent_category_id");
+          while (parentId) {
+            if (topicsController.category.id === parentId) {
+              // We're on a parent category page, use default renderer
+              return defaultCategoryLinkRenderer(category, opts);
             }
+            
+            // Move up the chain
+            const parent = Category.findById(parentId);
+            parentId = parent ? parent.parent_category_id : null;
           }
         }
+      }
+      
+      // Check for special cases where we'd use the default
+      if (opts.hideParent || !category || !category.parent_category_id) {
+        return defaultCategoryLinkRenderer(category, opts);
       }
 
       // Build full category breadcrumb chain
